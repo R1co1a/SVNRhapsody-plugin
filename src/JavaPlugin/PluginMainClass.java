@@ -29,6 +29,7 @@ public class PluginMainClass {
 	private static Collection<IRPPackage> topPackage = new ArrayList<>();
 	private static Collection<IRPActor> projectActors = new ArrayList<>();
 	private static Collection<IRPClass> projectOrganisations = new ArrayList<>();
+	private static Collection<IRPDependency> projectDependency = new ArrayList<>();
 	//the plugin extended classes factory
 	
 	//called when the plug-in is loaded
@@ -76,6 +77,9 @@ public class PluginMainClass {
 			}
 		}
 		calculateValuePath(projectActors);
+		calculateValuePath(projectOrganisations);
+		getValueLoops(projectActors);
+		getValueLoops(projectOrganisations);
 		//resetDiagram();
 	}
 	
@@ -144,8 +148,10 @@ public class PluginMainClass {
 			
 			for (Object obj : stakeholder.getDependencies().toList()) {
 				IRPDependency dependency = (IRPDependency)obj;
+				
 				int supplyImportance;
 				int benefitRanking;
+				
 				switch (dependency.getTag("Supply_Importance").getValue()) {
 				case "Low":
 					supplyImportance = 2;
@@ -186,6 +192,21 @@ public class PluginMainClass {
 			
 		}
 	
+	}
+	
+	/**
+	 * @param <T>
+	 * @param stakeholders
+	 */
+	public static <T extends IRPModelElement> void getValueLoops(Collection<T> stakeholders) {
+		IRPDependency[] dependencyCheckList = new Dependency[];
+		for (T stakeholder : stakeholders) {
+			for (Object obj : stakeholder.getDependencies().toList()) {
+				IRPDependency dependency = (IRPDependency)obj;
+				System.out.println(dependency.getDependent().getName());
+				System.out.println(dependency.getDependsOn().getName());
+			}
+		}
 	}
 
 }
