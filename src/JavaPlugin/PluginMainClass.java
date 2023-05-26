@@ -23,13 +23,17 @@ public class PluginMainClass {
 	
 	static IRPApplication rhpApp = null;
 	static IRPProject rhpProject = null;
+	static IRPModelElement firstStakeholder = null;
 	
 	static double[][]  valuePathQuantificationArray = {{0.3, 0.5, 0.95},{0.2, 0.4, 0.8},{0.1, 0.2, 0.4}};
 	
 	private static Collection<IRPPackage> topPackage = new ArrayList<>();
 	private static Collection<IRPActor> projectActors = new ArrayList<>();
 	private static Collection<IRPClass> projectOrganisations = new ArrayList<>();
-	private static Collection<IRPDependency> projectDependency = new ArrayList<>();
+	private static Collection<IRPDependency> projectDependencies = new ArrayList<>();
+	private static Collection<String> projectValueLoops = new ArrayList<>();
+	private static String tmpValueLoops = null;
+	private static boolean isLoop = false;
 	//the plugin extended classes factory
 	
 	//called when the plug-in is loaded
@@ -199,13 +203,28 @@ public class PluginMainClass {
 	 * @param stakeholders
 	 */
 	public static <T extends IRPModelElement> void getValueLoops(Collection<T> stakeholders) {
-		IRPDependency[] dependencyCheckList = new Dependency[];
+		IRPDependency[] dependencyCheckList = new IRPDependency[projectDependencies.size()];
 		for (T stakeholder : stakeholders) {
 			for (Object obj : stakeholder.getDependencies().toList()) {
 				IRPDependency dependency = (IRPDependency)obj;
 				System.out.println(dependency.getDependent().getName());
 				System.out.println(dependency.getDependsOn().getName());
 			}
+		}
+	}
+	
+	public static <T extends IRPModelElement> void runThroughStakeholder(T stakeholder) {
+		for (Object obj : stakeholder.getDependencies().toList()) {
+			IRPDependency dependency = (IRPDependency)obj;
+			if(dependency.getDependsOn() == firstStakeholder ) {
+				isLoop = true;
+			}else {
+				runThroughStakeholder(dependency.getDependsOn());
+			}
+			if (isLoop) {
+				tmpValueLoops = tmpValueLoops + "->" + dependency.getDependsOn().getName();
+			}
+			
 		}
 	}
 
