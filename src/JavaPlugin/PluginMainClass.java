@@ -5,8 +5,15 @@ import java.awt.Dialog;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.text.DecimalFormat;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.Queue;
+
 import javax.imageio.ImageIO;
 import javax.swing.JOptionPane;
 import com.telelogic.rhapsody.core.*;
@@ -23,17 +30,28 @@ public class PluginMainClass {
 	
 	static IRPApplication rhpApp = null;
 	static IRPProject rhpProject = null;
-	static IRPModelElement firstStakeholder = null;
+	
+	private static IRPClass projectCentralStakeholder;
+	private static Deque<IRPModelElement> stakeholderQueue = new ArrayDeque<>();
+	private static Deque<IRPDependency> valueLoopQueue = new ArrayDeque<>();
+	private static Collection<ArrayList<IRPDependency>> dependencyValueLoops = new ArrayList<>();
+	private static Collection<ArrayList<IRPModelElement>> stakeholderValueLoops = new ArrayList<>();
+	private static Collection<String> altDependenciesNames = new ArrayList<>();
+	private static ArrayList<Object[]> valueLoopData = new ArrayList<>();
 	
 	static double[][]  valuePathQuantificationArray = {{0.3, 0.5, 0.95},{0.2, 0.4, 0.8},{0.1, 0.2, 0.4}};
 	
 	private static Collection<IRPPackage> topPackage = new ArrayList<>();
 	private static Collection<IRPActor> projectActors = new ArrayList<>();
-	private static Collection<IRPClass> projectOrganisations = new ArrayList<>();
-	private static Collection<IRPDependency> projectDependencies = new ArrayList<>();
-	private static Collection<String> projectValueLoops = new ArrayList<>();
-	private static String tmpValueLoops = null;
-	private static boolean isLoop = false;
+	private static ArrayList<IRPClass> projectOrganisations = new ArrayList<>();
+	private static Collection<IRPModelElement> projectStakeholders = new ArrayList<>();
+	
+
+	private static Deque<IRPModelElement> currentLoop = new ArrayDeque<>();
+	static IRPModelElement firstStakeholder = null;
+	static boolean foundLoop = false;
+
+	private static DecimalFormat doubleFormat = new DecimalFormat("#.####");
 	//the plugin extended classes factory
 	
 	//called when the plug-in is loaded
@@ -45,6 +63,8 @@ public class PluginMainClass {
 		PluginMainClass.rhpApp = rpyApplication;
 		PluginMainClass.rhpProject = rpyApplication.activeProject();
 		
+		Model.initModel();
+		
 		for (Object obj : rhpProject.getAllNestedElements().toList()) {
 			if(obj.getClass() == RPPackage.class) {
 				IRPPackage pkg = (IRPPackage)obj;
@@ -52,12 +72,15 @@ public class PluginMainClass {
 			}
 		}
 		for(IRPPackage pkg : topPackage) {
-			System.out.println(pkg.getName());
 			for (Object obj : pkg.getAllNestedElements().toList()) {
-				System.out.println(obj.getClass());
 				if (obj.getClass() == RPActor.class) {
 					IRPActor actor = (IRPActor)obj;
 					projectActors.add(actor);
+					projectStakeholders.add(actor);
+				}else if (obj.getClass() == RPClass.class) {
+					IRPClass org = (IRPClass)obj;
+					projectOrganisations.add(org);
+					projectStakeholders.add(org);
 				}
 				/*
 				if (obj.getClass() == RPObjectModelDiagram.class) {
@@ -80,11 +103,22 @@ public class PluginMainClass {
 				}*/
 			}
 		}
+		
+		projectCentralStakeholder = projectOrganisations.get(0);
+		
 		calculateValuePath(projectActors);
 		calculateValuePath(projectOrganisations);
-		getValueLoops(projectActors);
-		getValueLoops(projectOrganisations);
-		//resetDiagram();
+		searchLoops(projectCentralStakeholder);
+		checkForMultipleDependencies();
+		computeValueLoop();
+		computeStakeholderValue();
+		UserInterface.showResultDialog();
+		
+		//computeAllValueLoops();
+        // Print all strings in one line	
+		resetDiagram();
+		
+		UserInterface.HelloWorld();
 	}
 	
 	//called when the plug-in menu item under the "Tools" menu is selected
@@ -93,7 +127,6 @@ public class PluginMainClass {
 	 */
 	public static void RhpPluginInvokeItem() {
 		JOptionPane.showMessageDialog(null, "Invoke");
-
 	}
 	
 	//called when the plug-in popup menu (if applicable) is selected
@@ -126,16 +159,24 @@ public class PluginMainClass {
 	/**
 	 * 
 	 */
+	@SuppressWarnings("unchecked")
 	public static void resetDiagram() {
 		for(IRPActor actor: projectActors) {
-			for (Object obj : actor.getDependencies().toList()) {
-				IRPDependency dep = (IRPDependency)obj;
-				dep.changeTo("Lien");
-				for (Object obj2 : dep.getLocalTags().toList()) {
-					IRPTag tag = (IRPTag)obj2;
-					System.out.println(tag.getName());
+			for (IRPDependency dependency : (Collection<IRPDependency>)actor.getDependencies().toList()) {
+				dependency.changeTo("Lien");
+				for (IRPTag tag : (Collection<IRPTag>)dependency.getLocalTags().toList()) {
 					if (tag.getName().contentEquals("Valeur")) {
-						System.out.println("uhgeighei");
+						tag.deleteFromProject();
+					}
+				}
+			}
+			actor.changeTo("Actor");
+		}
+		for (IRPClass organisation : projectOrganisations) {
+			for (IRPDependency dependency : (Collection<IRPDependency>)organisation.getDependencies().toList()) {
+				dependency.changeTo("Lien");
+				for (IRPTag tag : (Collection<IRPTag>)dependency.getLocalTags().toList()) {
+					if (tag.getName().contentEquals("Valeur")) {
 						tag.deleteFromProject();
 					}
 				}
@@ -198,34 +239,187 @@ public class PluginMainClass {
 	
 	}
 	
-	/**
-	 * @param <T>
-	 * @param stakeholders
-	 */
-	public static <T extends IRPModelElement> void getValueLoops(Collection<T> stakeholders) {
-		IRPDependency[] dependencyCheckList = new IRPDependency[projectDependencies.size()];
-		for (T stakeholder : stakeholders) {
-			for (Object obj : stakeholder.getDependencies().toList()) {
-				IRPDependency dependency = (IRPDependency)obj;
-				System.out.println(dependency.getDependent().getName());
-				System.out.println(dependency.getDependsOn().getName());
+	
+	
+	private static void checkForMultipleDependencies() {
+		Collection<String> stakeholderBuffer = new ArrayList<>();
+		
+		for (ArrayList<IRPDependency> valueLoop : dependencyValueLoops) {
+			
+			for (IRPDependency dependency : valueLoop) {
+				String stakeholder = dependency.getDependent().getName();
+				
+				if (!stakeholderBuffer.contains(stakeholder)) {
+					stakeholderBuffer.add(stakeholder);
+					
+					Collection<String> targetBuffer = new ArrayList<>();
+					Collection<String> dependenciesBuffer = new ArrayList<>();
+					
+					for (Object obj : dependency.getDependent().getDependencies().toList()) {
+						IRPDependency dep = (IRPDependency)obj;
+						
+						if (targetBuffer.contains(dep.getDependsOn().getName())) {
+							dependenciesBuffer.add(dep.getDependsOn().getName());
+						}else {
+							targetBuffer.add(dep.getDependsOn().getName());
+						}
+					}
+					for (Object obj : dependency.getDependent().getDependencies().toList()) {
+						IRPDependency dep = (IRPDependency)obj;
+						if (dependenciesBuffer.contains(dep.getDependsOn().getName())) {
+							altDependenciesNames.add(dep.getName());
+						}
+					}
+				}
 			}
 		}
 	}
 	
-	public static <T extends IRPModelElement> void runThroughStakeholder(T stakeholder) {
+	private static void searchLoops(IRPModelElement stakeholder) {
+		stakeholderQueue.offerLast(stakeholder);
+
 		for (Object obj : stakeholder.getDependencies().toList()) {
+			
 			IRPDependency dependency = (IRPDependency)obj;
-			if(dependency.getDependsOn() == firstStakeholder ) {
-				isLoop = true;
-			}else {
-				runThroughStakeholder(dependency.getDependsOn());
+			IRPModelElement nextStakeholder = dependency.getDependsOn();
+			
+			valueLoopQueue.offerLast(dependency);
+			
+			if(nextStakeholder.equals(projectCentralStakeholder)) {
+				
+				stakeholderQueue.offerLast(stakeholder);
+				
+				ArrayList<IRPDependency> tmpDependencyValueLoops = new ArrayList<>();
+				ArrayList<IRPModelElement> tmpStakeholderValueLoops = new ArrayList<>();
+				
+				Collections.addAll(tmpDependencyValueLoops, valueLoopQueue.toArray(new IRPDependency[0]));
+				Collections.addAll(tmpStakeholderValueLoops, stakeholderQueue.toArray(new IRPModelElement[0]));
+				
+				dependencyValueLoops.add(tmpDependencyValueLoops);
+				stakeholderValueLoops.add(tmpStakeholderValueLoops);
+				
+				stakeholderQueue.removeLast();
+				
+			}else if (!nextStakeholder.getDependencies().toList().isEmpty() && !stakeholderQueue.contains(nextStakeholder)) {
+				searchLoops(nextStakeholder);
 			}
-			if (isLoop) {
-				tmpValueLoops = tmpValueLoops + "->" + dependency.getDependsOn().getName();
+			valueLoopQueue.removeLast();
+		}
+		stakeholderQueue.removeLast();
+	}
+	
+	@SuppressWarnings("boxing")
+	private static void computeValueLoop() {
+		
+		for (ArrayList<IRPDependency> valueLoop : dependencyValueLoops) {
+			Double loopValue = 1.0;
+			String loopName = null;
+			String firstLoopStakeholder = null;
+			String loopDependencies = null;
+			Collection<String> stakeholderList = new ArrayList<>();
+			for (Object obj : valueLoop) {
+				IRPDependency dependency = (IRPDependency)obj;
+				
+				stakeholderList.add(dependency.getDependent().getName());
+				
+				loopValue = loopValue * Double.parseDouble(dependency.getTag("Valeur").getValue());
+				
+				if (loopName == null) {
+					loopName = dependency.getDependent().getName();
+					firstLoopStakeholder = loopName;
+				}else {
+					loopName = loopName + "->" + dependency.getDependent().getName();
+				}
+				
+				if (altDependenciesNames.contains(dependency.getName())) {
+					if (loopDependencies == null) {
+						loopDependencies = dependency.getName();
+					}else {
+						loopDependencies = loopDependencies + ", " + dependency.getName();
+					}
+				}
+			}
+			if (loopDependencies == null) {
+				loopName = loopName + "->" + firstLoopStakeholder;
+			}else {
+				loopName = loopName + "->" + firstLoopStakeholder + " (" + loopDependencies + ") ";
+			}
+			
+			Object[] row = { loopName, loopValue, stakeholderList };
+			valueLoopData.add(row);
+
+		}
+	}
+	
+	private static void computeStakeholderValue() {
+		Double sumAllValueLoops = 0.0;
+		ArrayList<Stakeholder> stakeholders = new ArrayList<>();
+		for (Object[] valueLoop : valueLoopData) {
+			sumAllValueLoops = sumAllValueLoops + (Double)valueLoop[1];
+		}
+		for (IRPActor stakeholder : projectActors) {
+			
+			Double sumStakeholderValueLoops = 0.0;
+			for (Object[] valueLoop : valueLoopData) {
+				@SuppressWarnings("unchecked")
+				ArrayList<String> stakeholderList = (ArrayList<String>)valueLoop[2];
+				if (stakeholderList.contains(stakeholder.getName())) {
+					sumStakeholderValueLoops = sumStakeholderValueLoops + (Double)valueLoop[1];
+				}
+			}
+			
+			if (sumAllValueLoops != 0.0) {
+				Stakeholder row = new Stakeholder(stakeholder, sumStakeholderValueLoops / sumAllValueLoops);
+				stakeholders.add(row);
 			}
 			
 		}
+		
+		changeStakeholderColor(stakeholders);
+	}
+	
+	private static void changeStakeholderColor(ArrayList<Stakeholder> stakeholders) {
+		
+		Collections.sort(stakeholders);
+		Integer third = stakeholders.size() % 3;
+		for (int i = 0; i < stakeholders.size(); i++) {
+			if (i < third) {
+				stakeholders.get(i).getItself().changeTo("Red_stackholder");
+			}else if (i >= stakeholders.size() - third) {
+				stakeholders.get(i).getItself().changeTo("Green_stakholder");
+			}else {
+				stakeholders.get(i).getItself().changeTo("Yellow_stakholder");
+			}
+				
+		}
+		
+		
 	}
 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
