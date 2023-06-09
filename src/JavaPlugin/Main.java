@@ -14,7 +14,6 @@ public class Main {
 		myPlugin.RhpPluginInit(app);
 		//imitate a call to the plugin
 		myPlugin.RhpPluginInvokeItem();
-
 	}
 
 }

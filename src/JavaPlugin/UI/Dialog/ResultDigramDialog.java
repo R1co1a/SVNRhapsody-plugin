@@ -1,4 +1,4 @@
-package JavaPlugin;
+package JavaPlugin.UI.Dialog;
 
 import java.awt.BorderLayout;
 import java.awt.Frame;
@@ -7,9 +7,6 @@ import java.awt.event.ActionListener;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
 import javax.swing.JDialog;
@@ -23,7 +20,11 @@ import javax.swing.JPanel;
 import javax.swing.JToolBar;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
-public class ImageDialog extends JDialog{
+/**
+ * @author adumez
+ *
+ */
+public class ResultDigramDialog extends JDialog{
 	
 	/**
 	 * 
@@ -32,16 +33,20 @@ public class ImageDialog extends JDialog{
 	private JLabel imageLabel;
 	private BufferedImage image;
 	
-	public ImageDialog(Frame owner, BufferedImage image) {
-		super(owner, "Image Dialog", true);
+	/**
+	 * @param owner
+	 * @param image
+	 */
+	public ResultDigramDialog(Frame owner, BufferedImage image) {
+		super(owner, "Image Dialog", true); //$NON-NLS-1$
 		this.image = image;
-		imageLabel = new JLabel(new ImageIcon(image));
+		this.imageLabel = new JLabel(new ImageIcon(image));
 		
 		JToolBar toolbar = new JToolBar();
 		toolbar.setFloatable(false);
 		
-		JMenu fileMenu = new JMenu("File");
-		JMenuItem saveMenuItem = new JMenuItem("Save");
+		JMenu fileMenu = new JMenu("File"); //$NON-NLS-1$
+		JMenuItem saveMenuItem = new JMenuItem("Save"); //$NON-NLS-1$
 		saveMenuItem.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -56,7 +61,7 @@ public class ImageDialog extends JDialog{
 		
 		JPanel contentPane = new JPanel(new BorderLayout());
 		contentPane.add(toolbar, BorderLayout.NORTH);
-        contentPane.add(imageLabel, BorderLayout.CENTER);
+        contentPane.add(this.imageLabel, BorderLayout.CENTER);
 
         setContentPane(contentPane);
         pack();
@@ -64,9 +69,9 @@ public class ImageDialog extends JDialog{
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
 	}
 	
-    private void saveImage() {
+    void saveImage() {
         JFileChooser fileChooser = new JFileChooser();
-        FileNameExtensionFilter filter = new FileNameExtensionFilter("PNG Images", "png");
+        FileNameExtensionFilter filter = new FileNameExtensionFilter("PNG Images", "png"); //$NON-NLS-1$ //$NON-NLS-2$
         fileChooser.setFileFilter(filter);
 
         int option = fileChooser.showSaveDialog(this);
@@ -75,10 +80,10 @@ public class ImageDialog extends JDialog{
             String filePath = file.getAbsolutePath();
 
             try {
-                ImageIO.write(image, "png", new File(filePath));
-                JOptionPane.showMessageDialog(this, "Image saved successfully!");
+                ImageIO.write(this.image, "png", new File(filePath)); //$NON-NLS-1$
+                JOptionPane.showMessageDialog(this, "Image saved successfully!"); //$NON-NLS-1$
             } catch (IOException e) {
-                JOptionPane.showMessageDialog(this, "Error saving image: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Error saving image: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE); //$NON-NLS-1$ //$NON-NLS-2$
             }
         }
     }
